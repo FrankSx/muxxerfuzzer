@@ -577,8 +577,8 @@ function exportJSON() {
 function exportCSV() {
   let csv = "hash,seedId,ops,bits,canary,matrix,payload\n";
   for (const h of hitList)
-    csv += h.hash + "," + h.seedId + "," + h.ops.replace(/"/g,'""') + "," + h.bits + ",'"'
-        + (h.execRes ? h.execRes.hits.join(";") : "") + "',"
+    csv += h.hash + "," + h.seedId + ',"' + h.ops.replace(/"/g,'""') + '",' + h.bits + ',"'
+        + (h.execRes ? h.execRes.hits.join(";") : "") + '",'
         + '"' + (h.mx ? h.mx.summary : "") + '","' + h.html.replace(/"/g,'""') + '"\n';
   dl(new Blob([csv], { type: "text/csv" }), "mxss_v4_" + Date.now() + ".csv");
 }
