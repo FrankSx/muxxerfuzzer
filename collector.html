@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mXSS Collector — persistent verdict sink</title>
+<style>
+  :root { --bg:#0b0f0a; --panel:#101a10; --line:#1f331f; --txt:#c0e0c0;
+          --gr:#39ff88; --mg:#ff2fd6; --am:#ffb300; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:13px/1.45 "JetBrains Mono",Consolas,monospace; }
+  header { padding:14px 18px; border-bottom:1px solid var(--line); }
+  header h1 { margin:0; font-size:16px; color:var(--gr); letter-spacing:1px; }
+  header span { color:var(--am); font-size:11px; }
+  main { padding:12px 18px; }
+  #big { font-size:44px; color:var(--gr); text-shadow:0 0 18px rgba(57,255,136,.5); }
+  .sub { color:#6a8a6a; font-size:11px; margin-bottom:14px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+  th,td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--line); }
+  th { color:#6a8a6a; font-size:10px; text-transform:uppercase; font-weight:normal; }
+  td.h { color:var(--mg); }
+  button { cursor:pointer; border:1px solid var(--gr); border-radius:6px; background:none;
+           color:var(--gr); padding:6px 12px; font:inherit; margin-top:10px; }
+  #pulse { display:inline-block; width:9px; height:9px; border-radius:50%;
+           background:var(--gr); margin-right:8px; animation:p 1.4s infinite; }
+  @keyframes p { 0%,100%{opacity:1} 50%{opacity:.2} }
+</style>
+</head>
+<body>
+<header>
+  <h1><span id="pulse"></span>mXSS COLLECTOR</h1>
+  <span>BroadcastChannel sink — keep this window open; hits survive harness navigation, blob exec &amp; frame teardown</span>
+</header>
+<main>
+  <div id="big">0</div>
+  <div class="sub" id="meta">waiting for harness&hellip;</div>
+  <button id="exp">&#10515; export JSON</button>
+  <button id="clr">clear</button>
+  <table>
+    <thead><tr><th>hash</th><th>hits</th><th>verdict flags</th><th>decoded</th><th>last seen</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+<script>
+"use strict";
+const LS_KEY = "mxss_collector_v2", CHAN = "mxss_lab";
+const BITNAMES = ["DIVERGE","NEWSCRIPT","CANARY","NSPIVOT","FOSTER","RAWTEXT","ENCODE","ERR","SANBYPASS","SMXSS"];
+const store = new Map();           // hash -> {hits, flags, last}
+let totalHits = 0, firstTs = null;
+
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    totalHits = saved.totalHits || 0;
+    firstTs = saved.firstTs || null;
+    for (const [h, r] of Object.entries(saved.rows || {})) store.set(+h, r);
+  } catch (e) {}
+}
+function save() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      totalHits, firstTs, rows: Object.fromEntries(store)
+    }));
+  } catch (e) {}
+}
+const hex = h => "0x" + (h >>> 0).toString(16).padStart(8, "0");
+const decode = f => BITNAMES.map((n,i)=> f & (1<<i) ? n : null).filter(Boolean).join(" ");
+
+function render() {
+  document.getElementById("big").textContent = totalHits;
+  document.getElementById("meta").textContent =
+    "first hit: " + (firstTs ? new Date(firstTs).toLocaleTimeString() : "—")
+    + " | unique payloads: " + store.size
+    + " | uptime: " + Math.round((Date.now() - t0) / 1000) + "s";
+  const tb = document.getElementById("rows");
+  tb.innerHTML = "";
+  [...store.entries()].sort((a,b) => b[1].hits - a[1].hits).slice(0, 300).forEach(([h, r]) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td class='h'>" + hex(h) + "</td><td>" + r.hits + "</td><td>"
+                 + r.flags + "</td><td>" + decode(r.flags) + "</td><td>"
+                 + new Date(r.last).toLocaleTimeString() + "</td>";
+    tb.appendChild(tr);
+  });
+}
+function hit(hash, bits) {
+  if (!firstTs) firstTs = Date.now();
+  const cur = store.get(hash) || { hits: 0, flags: 0, last: 0 };
+  cur.hits++; cur.flags |= bits; cur.last = Date.now();
+  store.set(hash, cur);
+  totalHits++;
+  if (totalHits % 10 === 0) save();
+  render();
+}
+
+const t0 = Date.now();
+load(); render();
+try {
+  const bc = new BroadcastChannel(CHAN);
+  bc.onmessage = e => {
+    const d = e.data || {};
+    if (d.t === "hit") hit(d.hash, d.bits || 0);
+    if (d.t === "reset") { store.clear(); totalHits = 0; firstTs = null; save(); render(); }
+  };
+  document.getElementById("meta").textContent = "channel open — " + CHAN;
+} catch (e) {
+  document.getElementById("meta").textContent = "BroadcastChannel unavailable — localStorage polling only";
+}
+/* fallback: poll the harness's localStorage mirror too */
+setInterval(() => {
+  try {
+    const mirror = JSON.parse(localStorage.getItem("mxss_state_v2") || "[]");
+    for (const [h, hits, flags] of mirror) {
+      const cur = store.get(h) || { hits: 0, flags: 0, last: Date.now() };
+      if (hits > cur.hits) { totalHits += hits - cur.hits; cur.hits = hits; cur.flags |= flags; store.set(h, cur); }
+    }
+  } catch (e) {}
+  render();
+}, 3000);
+
+document.getElementById("exp").onclick = () => {
+  save();
+  const out = JSON.stringify({ tool: "mxss-collector", exported: new Date().toISOString(),
+    totalHits, rows: [...store.entries()].map(([h, r]) => ({ hash: hex(h), ...r,
+    decoded: decode(r.flags) })) }, null, 2);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([out], { type: "application/json" }));
+  a.download = "mxss_collector_" + Date.now() + ".json";
+  a.click();
+};
+document.getElementById("clr").onclick = () => { store.clear(); totalHits = 0; firstTs = null; save(); render(); };
+</script>
+</body>
+</html>

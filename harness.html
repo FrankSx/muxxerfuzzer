@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mXSS Fuzzer v4.0 — Unified Parser Assault</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#050508; --panel:#0c0c12; --line:#1a1a28; --txt:#c8c8d4; --mut:#5a5a6a;
+          --rd:#ff4757; --gr:#2ed573; --am:#ffa502; --bl:#70a1ff; --mg:#ff2fd6; --cy:#00f0ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; padding:8px; }
+  h1 { font-size:14px; color:var(--rd); margin:0 0 2px; letter-spacing:.5px;
+       border-bottom:1px solid var(--line); padding-bottom:4px; }
+  .sub { color:var(--mut); font-size:9px; margin-bottom:6px; }
+  .bar { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-bottom:6px;
+         padding:4px 6px; background:var(--panel); border:1px solid var(--line); border-radius:3px; }
+  .btn { background:var(--panel); border:1px solid var(--line); color:var(--txt);
+         padding:2px 7px; border-radius:2px; cursor:pointer; font:inherit; font-size:9px; transition:.08s; }
+  .btn:hover { border-color:var(--gr); color:var(--gr); }
+  .btn.fire { border-color:var(--rd); color:var(--rd); }
+  .btn.fire:hover { background:var(--rd); color:#000; }
+  .btn.pause { border-color:var(--am); color:var(--am); }
+  .stat { color:var(--mut); font-size:9px; }
+  .stat .num { color:var(--txt); font-weight:600; }
+  .stat .hit { color:var(--rd); font-weight:700; }
+  .stat .ok  { color:var(--gr); font-weight:600; }
+  .grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:6px; }
+  @media (max-width:1100px){ .grid { grid-template-columns:1fr 1fr; } }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:3px; overflow:hidden; }
+  .box h3 { background:#12121a; padding:4px 6px; font-size:10px; color:var(--gr); margin:0;
+            border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
+  .box h3 .tag { font-size:8px; color:var(--mut); background:var(--bg);
+                 padding:1px 4px; border-radius:2px; border:1px solid var(--line); }
+  .cfg { display:grid; grid-template-columns:1fr 1fr; gap:3px 8px; padding:5px; }
+  .cfg label { display:flex; gap:4px; align-items:center; color:var(--mut); font-size:9px; }
+  .cfg input[type=number] { width:46px; background:var(--bg); border:1px solid var(--line);
+                            color:var(--txt); padding:1px 3px; border-radius:2px; font:inherit; }
+  .cfg input[type=checkbox]{ accent-color:var(--gr); }
+  .log { padding:4px 6px; max-height:280px; overflow-y:auto; font-size:9px; }
+  .log-entry { padding:1px 0; border-bottom:1px solid var(--line); display:flex; gap:6px; }
+  .log-time { color:var(--mut); min-width:44px; }
+  .lt { min-width:46px; font-weight:600; }
+  .lt.hit{color:var(--rd)} .lt.info{color:var(--bl)} .lt.warn{color:var(--am)} .lt.ok{color:var(--gr)}
+  .log-msg { flex:1; word-break:break-all; }
+  #rows { max-height:340px; overflow-y:auto; }
+  table { width:100%; border-collapse:collapse; font-size:9px; }
+  th,td { text-align:left; padding:3px 5px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mut); font-weight:normal; font-size:8px; text-transform:uppercase; }
+  tr.row { cursor:pointer; }
+  tr.row:hover { background:#14141f; }
+  tr.sel { background:#1a1420; }
+  td.code { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--am); }
+  .badge { display:inline-block; padding:0 4px; border-radius:2px; font-size:8px; margin:0 2px 1px 0; border:1px solid; }
+  .b-DIVERGE{color:var(--am);border-color:var(--am)} .b-NEWSCRIPT{color:var(--mg);border-color:var(--mg)}
+  .b-CANARY{color:#000;background:var(--mg);border-color:var(--mg);font-weight:bold}
+  .b-NSPIVOT{color:var(--cy);border-color:var(--cy)} .b-FOSTER{color:var(--gr);border-color:var(--gr)}
+  .b-RAWTEXT{color:#b48cff;border-color:#b48cff} .b-ENCODE{color:#6cf;border-color:#6cf}
+  .b-ERR{color:var(--rd);border-color:var(--rd)}
+  .b-SANBYPASS{color:#000;background:var(--rd);border-color:var(--rd);font-weight:bold}
+  .b-SMXSS{color:#000;background:var(--am);border-color:var(--am);font-weight:bold}
+  .mx { font-size:8px; color:var(--mut); }
+  .mx b { font-weight:600; }
+  .v-BYPASS{color:var(--rd)} .v-mXSS{color:var(--am)} .v-WARN{color:var(--bl)} .v-CLEAN{color:var(--gr)} .v-NA{color:var(--mut)}
+  #detail { padding:5px 6px; max-height:260px; overflow-y:auto; font-size:9px; }
+  .step { background:var(--bg); border:1px solid var(--line); border-radius:2px;
+          padding:4px 5px; margin-bottom:3px; word-break:break-all; }
+  .step .sn { color:var(--gr); font-weight:600; margin-right:4px; }
+  .step .so { color:var(--bl); }
+  .step code { color:var(--am); background:#0a0a10; padding:0 2px; }
+  #toast { position:fixed; bottom:10px; right:10px; background:var(--gr); color:#000;
+           padding:3px 10px; border-radius:2px; font-size:9px; font-weight:700;
+           opacity:0; transition:.2s; pointer-events:none; z-index:99; }
+  #toast.show { opacity:1; }
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:var(--line); border-radius:2px; }
+  #summary { display:none; }
+</style>
+</head>
+<body>
+
+<h1>&#9762; mXSS FUZZER v4.1 — BOUNTY HUNTER</h1>
+<p class="sub">v4.0 unified core + dp-WARN evolver + ddmin minimal-PoC shrinker. Matrix: DOMPurify ×3 · js-xss · Angular $sanitize · jQuery sink · Markdown pipe · native Sanitizer API · regex · text — vendor libs pinned via CDN (VENDOR.md).</p>
+
+<div class="bar" id="idbBar">
+  <div class="stat">L3 Store: <span class="num" id="idbState">init&hellip;</span></div>
+  <div class="stat">Saved: <span class="num" id="idbCount">0</span></div>
+  <div class="stat">Size: <span class="num" id="idbSize">0 KB</span></div>
+  <div class="stat">Session: <span class="num" id="sessId">--</span></div>
+  <button class="btn" onclick="idbRefresh()">Refresh</button>
+  <button class="btn" onclick="idbClear()">Clear DB</button>
+  <button class="btn" onclick="exportJSON()">Export JSON</button>
+  <button class="btn" onclick="exportCSV()">Export CSV</button>
+  <span style="margin-left:auto" class="stat">state: <span class="ok" id="backendTag">&hellip;</span></span>
+</div>
+
+<div class="bar">
+  <button class="btn fire" onclick="startFuzz()">&#9654; Start</button>
+  <button class="btn pause" onclick="pauseFuzz()">&#10074;&#10074; Pause</button>
+  <button class="btn" onclick="stepFuzz()">&#9197; Step</button>
+  <button class="btn" onclick="clearHits()">Clear Hits</button>
+  <button class="btn" onclick="window.open('collector.html','mxss_collector')">&#9673; Collector</button>
+  <button class="btn" style="border-color:var(--am);color:var(--am)" onclick="evolveCampaign()">&#9889; Evolve WARNs</button>
+  <button class="btn" onclick="resetAll()">&#8634; Reset</button>
+  <span style="margin-left:auto" class="stat">DOMPurify <span id="dpVer" class="num">?</span> | sandbox exec</span>
+</div>
+
+<div class="bar">
+  <div class="stat">Iterations: <span class="num" id="sIter">0</span></div>
+  <div class="stat">Kept: <span class="num" id="sKept">0</span></div>
+  <div class="stat">Canary: <span class="hit" id="sCanary">0</span></div>
+  <div class="stat">mXSS primes: <span class="hit" id="sPrimes">0</span></div>
+  <div class="stat">SanBypass: <span class="hit" id="sSan">0</span></div>
+  <div class="stat">s-mXSS: <span class="hit" id="sSmxss">0</span></div>
+  <div class="stat">WASM hits: <span class="num" id="sWasm">0</span></div>
+  <div class="stat">Speed: <span class="num" id="sSpeed">0</span>/s</div>
+  <div class="stat">Status: <span class="num" id="sStatus">idle</span></div>
+</div>
+
+<div class="grid">
+  <div class="box">
+    <h3>Engine Config <span class="tag">generation + mutation</span></h3>
+    <div class="cfg">
+      <label>mode <select id="cfgMode" style="background:var(--bg);color:var(--txt);border:1px solid var(--line);font:inherit;">
+        <option value="mixed">mixed</option><option value="mutate">mutate</option><option value="generate">generate</option></select></label>
+      <label>rounds <input type="number" id="cfgRounds" value="500" min="1"></label>
+      <label>prng seed <input type="number" id="cfgSeed" value="1337"></label>
+      <label>max ops <input type="number" id="cfgOps" value="4" min="1" max="12"></label>
+      <label>tree depth <input type="number" id="cfgDepth" value="4" min="1" max="10"></label>
+      <label>children <input type="number" id="cfgChildren" value="3" min="1" max="8"></label>
+      <label>entity % <input type="number" id="cfgEntity" value="30" min="0" max="100"></label>
+      <label>no-semi % <input type="number" id="cfgNosemi" value="15" min="0" max="100"></label>
+      <label>invisible % <input type="number" id="cfgInvis" value="10" min="0" max="100"></label>
+      <label><input type="checkbox" id="cfgSan" checked> sanitizer matrix</label>
+      <label><input type="checkbox" id="cfgExec" checked> exec canaries</label>
+      <label>exec policy <select id="cfgExecPol" style="background:var(--bg);color:var(--txt);border:1px solid var(--line);font:inherit;">
+        <option value="armed">armed-only</option><option value="all">every round</option></select></label>
+    </div>
+    <div class="cfg" style="border-top:1px solid var(--line);">
+      <label><input type="checkbox" class="genFlag" id="gAdopt" checked> adoption abuse</label>
+      <label><input type="checkbox" class="genFlag" id="gMath" checked> MathML mXSS</label>
+      <label><input type="checkbox" class="genFlag" id="gSVG" checked> SVG foreign</label>
+      <label><input type="checkbox" class="genFlag" id="gTpl" checked> template inject</label>
+      <label><input type="checkbox" class="genFlag" id="gNos" checked> noscript pivot</label>
+      <label><input type="checkbox" class="genFlag" id="gXmp" checked> xmp raw</label>
+      <label><input type="checkbox" class="genFlag" id="gClob" checked> DOM clobber</label>
+      <label><input type="checkbox" class="genFlag" id="gNS" checked> namespace pivot</label>
+      <label><input type="checkbox" class="genFlag" id="gCom" checked> comment breakout</label>
+      <label><input type="checkbox" class="genFlag" id="gMd"> markdown pipe</label>
+    </div>
+  </div>
+
+  <div class="box">
+    <h3>Live Log <span class="tag">iterations</span></h3>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="box">
+    <h3>Hit Detail <span class="tag">replay + matrix</span></h3>
+    <div id="detail"><span class="stat">click a verdict row&hellip;</span></div>
+  </div>
+</div>
+
+<div class="box">
+  <h3>Verdicts <span class="tag" id="rowCount">0 kept</span></h3>
+  <div id="rows">
+  <table>
+    <thead><tr><th>#</th><th>source</th><th>verdict</th><th>sanitizer matrix</th><th>candidate</th><th>notes</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+<pre id="summary"></pre>
+
+<!-- vendor libs: fetched at load time, pinned versions (see VENDOR.md).
+     Fully offline? Download per VENDOR.md into js/ and point these tags at the local files. -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.5/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xss@1.0.15/dist/xss.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.slim.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/angular@1.8.3/angular.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/angular-sanitize@1.8.3/angular-sanitize.min.js"></script>
+<script src="js/wasm_state.js"></script>
+<script src="js/detector.js"></script>
+<script src="js/mutation_engine.js"></script>
+<script src="js/corpus.js"></script>
+<script src="js/generator.js"></script>
+<script src="js/sanitizer.js"></script>
+<script src="js/minimizer.js"></script>
+<script src="js/storage_idb.js"></script>
+<script>
+"use strict";
+/* modal guard: sink engines (jQuery) may execute candidate scripts in THIS
+ * page — never let a legacy alert() freeze the harness UI */
+window.alert = window.confirm = window.prompt = function () { return 0; };
+/* --------------------------------------------------------------------------
+ * exec prologue — canary + nested relay + modal trap + error trap + DOM postback
+ * ------------------------------------------------------------------------ */
+const PROLOGUE = (() => {
+  const O = "<scr" + "ipt>", C = "</scr" + "ipt>";
+  return O + `
+window.__mxss={hit:function(id){try{parent.postMessage({t:"mxss_exec",id:String(id)},"*")}catch(e){}}};
+window.addEventListener("message",function(e){var d=e.data;if(d&&d.t==="mxss_exec"){try{parent.postMessage(d,"*")}catch(_){}}});
+try{window.alert=window.confirm=window.prompt=function(x){__mxss.hit("modal:"+x)}}catch(e){}
+window.addEventListener("error",function(e){try{parent.postMessage({t:"mxss_err",msg:String(e.message||e)},"*")}catch(_){}});
+try{new MutationObserver(function(ms){ms.forEach(function(m){m.addedNodes.forEach(function(n){if(n.nodeType===1){var tg=(n.localName||"").toLowerCase();if(tg==="script"||tg==="iframe")__mxss.hit("dom:"+tg)}})})}).observe(document,{childList:true,subtree:true})}catch(e){}
+setTimeout(function(){var h="";try{h=document.documentElement?document.documentElement.outerHTML:""}catch(e){}try{parent.postMessage({t:"mxss_done",html:h},"*")}catch(_){}},200);
+` + C;
+})();
+
+const $ = id => document.getElementById(id);
+const BITNAMES = ["DIVERGE","NEWSCRIPT","CANARY","NSPIVOT","FOSTER","RAWTEXT",
+                  "ENCODE","ERR","SANBYPASS","SMXSS"];
+const stats = { iter:0, kept:0, canary:0, primes:0, san:0, smxss:0 };
+const hitList = [];              // full-fidelity in-memory ring (last 300)
+let running = false, paused = false, rowN = 0;
+let speedCount = 0, lastTick = Date.now();
+
+function log(type, msg) {
+  const p = $("log"), e = document.createElement("div");
+  e.className = "log-entry";
+  e.innerHTML = "<span class='log-time'>" + new Date().toTimeString().slice(0,8)
+    + "</span><span class='lt " + type.toLowerCase() + "'>" + type
+    + "</span><span class='log-msg'>" + msg.replace(/</g,"&lt;") + "</span>";
+  p.appendChild(e); p.scrollTop = p.scrollHeight;
+  while (p.children.length > 200) p.removeChild(p.firstChild);
+}
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").slice(0,300);
+const badges = bits => BITNAMES.map((n,i) =>
+  (bits & (1<<i)) ? "<span class='badge b-"+n+"'>"+n+"</span>" : "").join("");
+const mxBadges = mx => !mx ? "<span class='mx'>—</span>" : "<span class='mx'>" +
+  mx.engines.map(e => "<b class='v-"+(e.verdict==="N/A"?"NA":e.verdict)+"'>"+e.id+"</b>").join(" ") + "</span>";
+
+function renderStats() {
+  $("sIter").textContent = stats.iter;   $("sKept").textContent = stats.kept;
+  $("sCanary").textContent = stats.canary; $("sPrimes").textContent = stats.primes;
+  $("sSan").textContent = stats.san;     $("sSmxss").textContent = stats.smxss;
+  $("sWasm").textContent = MXSSState.total();
+  const now = Date.now();
+  if (now - lastTick >= 1000) { $("sSpeed").textContent = speedCount; speedCount = 0; lastTick = now; }
+}
+
+/* ------------------------- sandboxed execution -------------------------- */
+function execRound(html, timeoutMs) {
+  return new Promise(resolve => {
+    let settled = false, errs = 0; const hits = []; let doneHtml = null;
+    const fr = document.createElement("iframe");
+    fr.setAttribute("sandbox","allow-scripts");
+    fr.style.cssText = "width:10px;height:10px;border:0;position:absolute;left:-9999px;top:-9999px";
+    const onMsg = e => {
+      const d = e.data; if (!d || typeof d !== "object") return;
+      if (d.t === "mxss_exec") hits.push(String(d.id));
+      else if (d.t === "mxss_err") errs++;
+      else if (d.t === "mxss_done") doneHtml = d.html;
+    };
+    const finish = () => {
+      if (settled) return; settled = true;
+      window.removeEventListener("message", onMsg);
+      fr.remove(); resolve({ hits, doneHtml, errs });
+    };
+    window.addEventListener("message", onMsg);
+    fr.onload = () => setTimeout(finish, timeoutMs);
+    setTimeout(finish, timeoutMs * 4);
+    fr.srcdoc = PROLOGUE + html;
+    document.body.appendChild(fr);
+  });
+}
+
+/* ------------------------------ round flow ------------------------------ */
+function genCfg() {
+  return {
+    depth: +$("cfgDepth").value || 4, maxChildren: +$("cfgChildren").value || 3,
+    entityProb: (+$("cfgEntity").value || 30) / 100,
+    noSemiProb: (+$("cfgNosemi").value || 15) / 100,
+    invisProb: (+$("cfgInvis").value || 10) / 100,
+    useAdopt: $("gAdopt").checked, useMath: $("gMath").checked, useSVG: $("gSVG").checked,
+    useTemplate: $("gTpl").checked, useNoscript: $("gNos").checked, useXMP: $("gXmp").checked,
+    useClobber: $("gClob").checked, useNS: $("gNS").checked, useComment: $("gCom").checked,
+    useMarkdown: $("gMd").checked
+  };
+}
+
+async function fuzzOnce(cfg, rng) {
+  /* 1 — candidate */
+  const mode = cfg.mode === "mixed" ? (rng() < 0.5 ? "mutate" : "generate") : cfg.mode;
+  let cand, seedId;
+  if (mode === "generate") {
+    cand = Generator.generate(rng, genCfg());
+    seedId = "gen";
+  } else {
+    const seed = Corpus.seeds[Math.floor(rng() * Corpus.seeds.length)];
+    cand = MutEngine.mutate(seed.html, rng, 1 + Math.floor(rng() * cfg.maxOps), null);
+    seedId = seed.id;
+  }
+  const html = cand.html, ops = cand.opsApplied.join(",");
+
+  /* 2 — differential oracle */
+  const det = Detector.differential(html);
+  let bits = det.bits;
+  let note = det.notes.join("; ");
+
+  /* 3 — sanitizer matrix */
+  let mx = null;
+  if (cfg.san) {
+    mx = Sanitizer.matrix(html);
+    bits |= mx.bits;
+    if (mx.bits & MXSSState.V.SANBYPASS) note += (note?" | ":"") + "sanitizer pass-through";
+    if (mx.bits & MXSSState.V.SMXSS)     note += (note?" | ":"") + "REPARSE-GROWTH on sanitized output";
+  }
+
+  /* 4 — exec policy: every round, or only when static analysis says "armed" */
+  let execRes = null;
+  const armed = !!(bits & (MXSSState.V.NEWSCRIPT | MXSSState.V.SANBYPASS | MXSSState.V.SMXSS))
+             || Sanitizer.detect(html).some(s => s.severity === "critical");
+  if (cfg.exec && (cfg.execPol === "all" || armed)) {
+    execRes = await execRound(html, 240);
+    if (execRes.hits.length) { bits |= MXSSState.V.CANARY; note += (note?" | ":"")+"EXEC: "+execRes.hits.slice(0,4).join(","); }
+    if (execRes.errs)        { bits |= MXSSState.V.ERR; }
+    if (execRes.doneHtml) {
+      try {
+        const post = Detector.differential(execRes.doneHtml);
+        if (post.bits & MXSSState.V.DIVERGE) note += (note?" | ":"")+"post-exec DOM drift";
+      } catch (e) {}
+    }
+  }
+
+  /* 5 — record */
+  stats.iter++; speedCount++;
+  if (bits & MXSSState.V.CANARY)    stats.canary++;
+  if (bits & MXSSState.V.NEWSCRIPT) stats.primes++;
+  if (bits & MXSSState.V.SANBYPASS) stats.san++;
+  if (bits & MXSSState.V.SMXSS)     stats.smxss++;
+
+  if (bits !== 0) {
+    stats.kept++;
+    const hash = MXSSState.record(seedId+"|"+ops+"|"+html, bits,
+                                  { seed: seedId, ops, html, note });
+    IDBStore.save({ hash, seedId, ops, html, bits, note,
+                    matrixSummary: mx ? mx.summary : null,
+                    canaryIds: execRes ? execRes.hits : [] });
+    hitList.push({ hash, seedId, ops, html, bits, note, mx, execRes });
+    if (hitList.length > 300) hitList.shift();
+    addRow(hitList[hitList.length-1]);
+    if (bits & (MXSSState.V.CANARY | MXSSState.V.SMXSS))
+      log("HIT", "#" + stats.kept + " " + seedId + " [" + ops + "] " + note.slice(0,120));
+  }
+  renderStats();
+}
+
+async function fuzzLoop(cfg) {
+  const rng = MutEngine.mulberry32(cfg.seed >>> 0);
+  running = true; paused = false;
+  setStatus("running", "var(--gr)");
+  log("INFO", "start — mode=" + cfg.mode + " seed=" + cfg.seed + " rounds=" + cfg.rounds
+      + " san=" + cfg.san + " exec=" + cfg.exec + "/" + cfg.execPol);
+  for (let i = 0; i < cfg.rounds && running; i++) {
+    if (paused) { await new Promise(r => setTimeout(r, 120)); i--; continue; }
+    await fuzzOnce(cfg, rng);
+    if (i % 6 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+  running = false;
+  MXSSState.flush();
+  setStatus("idle", "var(--txt)");
+  renderStats();
+  log("OK", "complete — " + stats.kept + " kept, " + MXSSState.total() + " total state hits");
+  if (AUTO.active) finishAuto();
+}
+
+function addRow(h) {
+  const tb = $("tbody"), tr = document.createElement("tr");
+  tr.className = "row";
+  tr.innerHTML = "<td>" + (++rowN) + "</td><td>" + esc(h.seedId) + "</td>"
+    + "<td>" + badges(h.bits) + "</td><td>" + mxBadges(h.mx) + "</td>"
+    + "<td class='code'>" + esc(h.html) + "</td><td>" + esc(h.note) + "</td>";
+  tr.onclick = () => { showDetail(h, tr); };
+  tb.prepend(tr);
+  while (tb.rows.length > 300) tb.deleteRow(-1);
+  $("rowCount").textContent = stats.kept + " kept";
+}
+
+function showDetail(h, tr) {
+  document.querySelectorAll("tr.sel").forEach(r => r.classList.remove("sel"));
+  if (tr) tr.classList.add("sel");
+  let s = "";
+  s += "<div class='step'><span class='sn'>0</span><span class='so'>SOURCE</span> "
+     + esc(h.seedId) + " <span class='mx'>" + esc(h.ops) + "</span></div>";
+  s += "<div class='step'><span class='sn'>1</span><span class='so'>CANDIDATE</span><br><code>"
+     + esc(h.html) + "</code></div>";
+  s += "<div class='step'><span class='sn'>2</span><span class='so'>VERDICT</span> "
+     + badges(h.bits) + "<br><span class='mx'>" + esc(h.note) + "</span></div>";
+  if (h.mx) {
+    s += "<div class='step'><span class='sn'>3</span><span class='so'>SANITIZER MATRIX</span>";
+    for (const e of h.mx.engines) {
+      s += "<br><b class='v-" + (e.verdict==="N/A"?"NA":e.verdict) + "'>" + e.verdict + "</b> "
+         + "<span class='mx'>" + e.name + "</span>";
+      if (e.critical && e.critical.length) s += " <span class='v-BYPASS'>" + e.critical.join(",") + "</span>";
+      if (e.reparseCritical && e.reparseCritical.length) s += " <span class='v-mXSS'>reparse:+" + e.reparseCritical.join(",") + "</span>";
+    }
+    s += "</div>";
+  }
+  if (h.execRes)
+    s += "<div class='step'><span class='sn'>4</span><span class='so'>SANDBOX EXEC</span> "
+       + (h.execRes.hits.length ? "<b class='v-BYPASS'>" + h.execRes.hits.join(", ") + "</b>"
+                                : "<span class='v-CLEAN'>no canary</span>") + "</div>";
+  /* v4.1 — weapon buttons */
+  s += "<div class='step'><span class='sn'>5</span><span class='so'>WEAPONS</span><br>";
+  if (h.mx) {
+    for (const e of h.mx.engines) {
+      if (e.verdict === "BYPASS" || e.verdict === "mXSS")
+        s += "<button class='btn' onclick='runMinimize(" + h.hash + ",\"" + e.id + "\")'>"
+           + "&#9878; ddmin[" + e.id + "]</button>";
+      else if (e.verdict === "WARN" && e.id !== "none" && e.id !== "text")
+        s += "<button class='btn' style='border-color:var(--am);color:var(--am)' "
+           + "onclick='runEvolve(" + h.hash + ",\"" + e.id + "\")'>"
+           + "&#9889; evolve[" + e.id + "]</button>";
+    }
+  }
+  if (h.execRes && h.execRes.hits.length)
+    s += "<button class='btn' style='border-color:var(--mg);color:var(--mg)' "
+       + "onclick='runMinimizeExec(" + h.hash + ")'>&#9878; ddmin[canary]</button>";
+  s += "<button class='btn' onclick='copyHit(\"" + h.hash + "\")'>copy payload</button>";
+  s += "</div><div id='weaponOut'></div>";
+  $("detail").innerHTML = s;
+}
+
+/* ------------------------- v4.1 weapons ---------------------------------- */
+const minStore = {};   // hash -> [{engine, origLen, minHtml, steps, ms}]
+const findHit = h => hitList.find(x => String(x.hash) === String(h));
+
+function weaponSay(html) {
+  const w = $("weaponOut");
+  if (w) w.innerHTML = html + "<hr style='border-color:var(--line)'>";
+}
+
+async function runMinimize(hash, engineId) {
+  const h = findHit(hash); if (!h) return;
+  weaponSay("<span class='stat'>ddmin[" + engineId + "] running&hellip; (oracle = verdict persists)</span>");
+  const a = Sanitizer.analyze(Sanitizer.engineById(engineId), h.html);
+  const want = a.verdict;
+  const t0 = Date.now();
+  const res = await Minimizer.ddmin(h.html, Sanitizer.oracleFor(engineId, want), { maxSteps: 300 });
+  (minStore[hash] = minStore[hash] || []).push({ engine: engineId, origLen: res.origLen,
+    minHtml: res.html, steps: res.steps, ms: Date.now() - t0 });
+  weaponSay("<b class='v-BYPASS'>ddmin[" + engineId + "] " + res.origLen + " → " + res.html.length
+    + " chars</b> <span class='stat'>(" + res.steps + " oracle calls, " + res.ms + "ms)</span><br>"
+    + "<code style='color:var(--gr)'>" + esc(res.html) + "</code><br>"
+    + "<button class='btn' onclick='navigator.clipboard.writeText(decodeURIComponent(\"" + encodeURIComponent(res.html) + "\"))'>copy minimal PoC</button>");
+  log("HIT", "ddmin[" + engineId + "]: " + res.origLen + "→" + res.html.length + " chars in " + res.steps + " steps");
+}
+
+async function runMinimizeExec(hash) {
+  const h = findHit(hash); if (!h || !h.execRes) return;
+  const wantHits = new Set(h.execRes.hits);
+  weaponSay("<span class='stat'>ddmin[canary] running — exec oracle, this takes a moment&hellip;</span>");
+  const oracle = async html => {
+    const r = await execRound(html, 240);
+    return r.hits.some(x => wantHits.has(x));
+  };
+  const res = await Minimizer.ddmin(h.html, oracle, { maxSteps: 80 });
+  (minStore[hash] = minStore[hash] || []).push({ engine: "canary", origLen: res.origLen,
+    minHtml: res.html, steps: res.steps, ms: res.ms });
+  weaponSay("<b class='v-BYPASS'>ddmin[canary] " + res.origLen + " → " + res.html.length
+    + " chars</b> <span class='stat'>(" + res.steps + " execs)</span><br>"
+    + "<code style='color:var(--gr)'>" + esc(res.html) + "</code>");
+  log("HIT", "ddmin[canary]: " + res.origLen + "→" + res.html.length + " — minimal self-exec PoC");
+}
+
+async function runEvolve(hash, engineId) {
+  const h = findHit(hash); if (!h) return;
+  weaponSay("<span class='stat'>evolve[" + engineId + "] hunting the flip&hellip;</span>");
+  const eng = Sanitizer.engineById(engineId);
+  const oracle = async html => {
+    const v = Sanitizer.analyze(eng, html).verdict;
+    return v === "BYPASS" || v === "mXSS";
+  };
+  const res = await Minimizer.evolve(h.html, oracle, { budget: 150 });
+  if (res.flipped) {
+    const v = Sanitizer.analyze(eng, res.html).verdict;
+    weaponSay("<b class='v-BYPASS'>FLIPPED[" + engineId + "] → " + v + "</b> in " + res.rounds
+      + " rounds<br><code style='color:var(--gr)'>" + esc(res.html) + "</code>");
+    log("HIT", "evolve[" + engineId + "] FLIPPED after " + res.rounds + " rounds!");
+    MXSSState.record("evo|" + engineId + "|" + res.html,
+      MXSSState.V.SANBYPASS | (v === "mXSS" ? MXSSState.V.SMXSS : 0),
+      { seed: "evolve:" + h.seedId, ops: "evolve-" + engineId, html: res.html,
+        note: "evolved from hash " + hash });
+    renderStats();
+  } else {
+    weaponSay("<span class='v-CLEAN'>evolve[" + engineId + "] held after " + res.rounds + " rounds</span>");
+    log("INFO", "evolve[" + engineId + "] no flip in " + res.rounds + " rounds");
+  }
+}
+
+/* evolve-every-WARN campaign */
+async function evolveCampaign() {
+  const targets = [];
+  for (const h of hitList) {
+    if (!h.mx) continue;
+    for (const e of h.mx.engines)
+      if (e.verdict === "WARN" && !["none","text","dps"].includes(e.id))
+        targets.push({ h, e });
+  }
+  log("INFO", "campaign: " + targets.length + " WARN surfaces to evolve");
+  let flips = 0;
+  for (const t of targets.slice(0, 25)) {
+    const eng = Sanitizer.engineById(t.e.id);
+    const oracle = async html => ["BYPASS","mXSS"].includes(Sanitizer.analyze(eng, html).verdict);
+    const res = await Minimizer.evolve(t.h.html, oracle, { budget: 80 });
+    if (res.flipped) { flips++; log("HIT", "campaign FLIP on " + t.e.id + " from " + t.h.seedId); }
+    await new Promise(r => setTimeout(r, 0));
+  }
+  log("OK", "campaign done — " + flips + " flips");
+}
+function copyHit(hash) {
+  const h = hitList.find(x => x.hash === +hash) || hitList.find(x => x.hash === hash);
+  if (h && navigator.clipboard) navigator.clipboard.writeText(h.html).then(() => {
+    $("toast").textContent = "payload copied"; $("toast").classList.add("show");
+    setTimeout(() => $("toast").classList.remove("show"), 800);
+  });
+}
+
+/* ------------------------------ controls -------------------------------- */
+function readCfg() {
+  return { rounds: Math.max(1, +$("cfgRounds").value || 500),
+           seed: +$("cfgSeed").value || 1337,
+           maxOps: Math.min(12, Math.max(1, +$("cfgOps").value || 4)),
+           mode: $("cfgMode").value,
+           san: $("cfgSan").checked, exec: $("cfgExec").checked,
+           execPol: $("cfgExecPol").value };
+}
+function setStatus(t, c) { $("sStatus").textContent = t; $("sStatus").style.color = c; }
+function startFuzz() { if (!running) fuzzLoop(readCfg()); }
+function pauseFuzz() {
+  paused = !paused;
+  setStatus(paused ? "paused" : "running", paused ? "var(--am)" : "var(--gr)");
+  log("INFO", paused ? "paused" : "resumed");
+}
+async function stepFuzz() {
+  if (running) return;
+  const cfg = readCfg(); cfg.rounds = 1;
+  setStatus("stepping", "var(--bl)");
+  const rng = MutEngine.mulberry32((cfg.seed + stats.iter) >>> 0);
+  running = true; await fuzzOnce(cfg, rng); running = false;
+  setStatus("idle", "var(--txt)"); MXSSState.flush();
+}
+function clearHits() {
+  hitList.length = 0; stats.kept = 0; stats.canary = 0; stats.primes = 0; stats.san = 0; stats.smxss = 0;
+  $("tbody").innerHTML = ""; rowN = 0; $("rowCount").textContent = "0 kept";
+  log("INFO", "hits cleared"); renderStats();
+}
+function resetAll() { clearHits(); stats.iter = 0; MXSSState.reset(); renderStats(); log("INFO","full state reset"); }
+
+async function idbRefresh() {
+  const s = await IDBStore.stats();
+  $("idbCount").textContent = s.count;
+  $("idbSize").textContent = (s.bytes / 1024).toFixed(1) + " KB";
+}
+async function idbClear() { await IDBStore.clear(); idbRefresh(); log("INFO","IndexedDB cleared"); }
+
+function exportJSON() {
+  MXSSState.flush();
+  const data = JSON.stringify({
+    tool: "html5-parser-fuzzer", version: "4.0", backend: MXSSState.backend,
+    session: IDBStore.session, exported: new Date().toISOString(),
+    verdictBits: MXSSState.V, stats,
+    minimized: minStore,
+    programs: Sanitizer.programs(),
+    hits: hitList.map(h => ({ hash: h.hash, seedId: h.seedId, ops: h.ops, html: h.html,
+                              bits: h.bits, note: h.note,
+                              matrixSummary: h.mx ? h.mx.summary : null,
+                              canaryIds: h.execRes ? h.execRes.hits : [] }))
+  }, null, 2);
+  dl(new Blob([data], { type: "application/json" }), "mxss_v4_" + Date.now() + ".json");
+}
+function exportCSV() {
+  let csv = "hash,seedId,ops,bits,canary,matrix,payload\n";
+  for (const h of hitList)
+    csv += h.hash + "," + h.seedId + "," + h.ops.replace(/"/g,'""') + "," + h.bits + ",'"'
+        + (h.execRes ? h.execRes.hits.join(";") : "") + "',"
+        + '"' + (h.mx ? h.mx.summary : "") + '","' + h.html.replace(/"/g,'""') + '"\n';
+  dl(new Blob([csv], { type: "text/csv" }), "mxss_v4_" + Date.now() + ".csv");
+}
+function dl(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ------------------------------ auto mode ------------------------------- */
+const Q = new URLSearchParams(location.search);
+const AUTO = { active: Q.has("auto") };
+function finishAuto() {
+  $("summary").textContent = JSON.stringify({
+    status: "MXSS_DONE", backend: MXSSState.backend, stats,
+    wasmTotal: MXSSState.total(),
+    dpLoaded: typeof DOMPurify !== "undefined",
+    snapshot: MXSSState.snapshot().slice(0, 40)
+  });
+  document.title = "MXSS_DONE";
+}
+
+window.addEventListener("load", async () => {
+  const be = await MXSSState.init();
+  /* IndexedDB can hang forever on file:// in some builds — race it */
+  const idb = await Promise.race([
+    IDBStore.init(),
+    new Promise(r => setTimeout(() => r(false), 1500))
+  ]);
+  $("backendTag").textContent = be;
+  $("idbState").textContent = idb ? "IndexedDB" : "unavailable";
+  $("sessId").textContent = IDBStore.session;
+  $("dpVer").textContent = (typeof DOMPurify !== "undefined") ? DOMPurify.version : "MISSING";
+  log("INFO", "layers online: wasm=" + be + " idb=" + idb
+      + " dp=" + (typeof DOMPurify !== "undefined"));
+  idbRefresh();
+  setInterval(idbRefresh, 15000);
+  renderStats();
+
+  if (AUTO.active) {
+    if (Q.get("ddtest") === "1") {
+      /* headless weapon check: shrink a regex-blind payload (unclosed script) */
+      const SCR = "<scr" + "ipt>";
+      const canned = "<div><p>AAAA</p>" + SCR + "__mxss.hit('dd')</div>BBBB<span>CCCCCCCC</span><b>pad</b>";
+      const res = await Minimizer.ddmin(canned, Sanitizer.oracleFor("regex", "BYPASS"), { maxSteps: 300 });
+      /* evolve check: cold seed → BYPASS flip on regex via injection ops */
+      const evo = await Minimizer.evolve("<b>safe</b>",
+        async h => ["BYPASS","mXSS"].includes(Sanitizer.analyze(Sanitizer.engineById("regex"), h).verdict),
+        { budget: 60, rng: MutEngine.mulberry32(7) });
+      $("summary").textContent = JSON.stringify({
+        status: "MXSS_DONE", ddmin: { orig: res.origLen, min: res.html.length,
+          steps: res.steps, html: res.html },
+        evolve: { flipped: evo.flipped, rounds: evo.rounds,
+          html: evo.flipped ? evo.html.slice(0, 200) : null },
+        engines: Sanitizer.ENGINES.map(e => e.id)
+      });
+      document.title = "MXSS_DONE";
+      return;
+    }
+    fuzzLoop({ rounds: +Q.get("auto") || 100, seed: +Q.get("seed") || 1,
+               maxOps: +Q.get("ops") || 4, mode: Q.get("mode") || "mixed",
+               san: Q.get("san") !== "0", exec: Q.get("exec") === "1",
+               execPol: Q.get("execpol") || "armed" });
+  }
+});
+</script>
+</body>
+</html>
