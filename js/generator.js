@@ -34,7 +34,7 @@ const Generator = (() => {
   };
   const PROTOCOLS = ["javascript:","data:","vbscript:","file:","about:","blob:"];
   const CANARY = id => "__mxss.hit('" + id + "')";
-  const INVISIBLE = ["\u200b","\u200c","\u200d","\u200e","\u200f","\u2060","\u2061","\u2062","\u2063","\u2064","\ufeff","\u00a0"," "," "];
+  const INVISIBLE = ["\u200b","\u200c","\u200d","\u200e","\u200f","\u2060","\u2061","\u2062","\u2063","\u2064","\ufeff","\u00a0","\u2028","\u2029"];
 
   const pick  = (rng, arr) => arr[Math.floor(rng() * arr.length)];
   const bool  = (rng, p) => rng() < p;
