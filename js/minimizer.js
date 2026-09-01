@@ -96,7 +96,7 @@ const Minimizer = (() => {
     h => h.replace(/\s(on\w+)=/, (m, a) => " " + a + "=\"" + h0(h) + "\" "),
     h => h.replace(/</, "<!-- --!><"),
     h => h.replace(/>/, "><template>") ,
-    h => h.replace(/(\s\w+)=(("[^"]*")|("[^"]*"))/, "$1=$1$1"),          // dup attr
+    h => h.replace(/(\s\w+)=("[^"]*")/, "$1=$1$1"),          // dup attr
     h => h.replace(/onerror=/, "onerror&NewLine;="),
     h => h.replace(/<(\w+)/, "<svg><foreignObject><$1"),
     h => "</math>" + h,
